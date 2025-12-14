@@ -10,7 +10,6 @@ import os
 import tempfile
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
 load_dotenv()
 
@@ -29,14 +28,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuração Supabase
+# Configuração Supabase (não falha se não configurado)
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    raise ValueError("Variáveis SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configuradas")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    from supabase import create_client, Client
+    supabase: Optional[Client] = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # Importar função principal do script original
 import sys
@@ -61,7 +60,10 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "supabase_configured": bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)}
+    return {
+        "status": "ok",
+        "supabase_configured": bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
+    }
 
 @app.post("/process")
 async def process_csv(file: UploadFile = File(...)):
@@ -71,6 +73,12 @@ async def process_csv(file: UploadFile = File(...)):
     Aceita arquivo CSV via multipart/form-data.
     Retorna estatísticas do processamento.
     """
+    if not supabase:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase não configurado. Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY"
+        )
+    
     try:
         # Validar tipo de arquivo
         if not file.filename or not file.filename.endswith('.csv'):
@@ -109,4 +117,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
